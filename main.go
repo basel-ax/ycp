@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"flag"
 	"fmt"
 	"log"
 	"os"
@@ -10,20 +11,21 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/basel-ax/ycp/redis"
 	"github.com/joho/godotenv"
 )
 
 // Config holds the application configuration
 type Config struct {
-	ButtonCodes      map[string]string
-	TotalLimit       int
-	TimeLimit        int
-	FinalComment     string
-	APIConnection    string
-	RedisHost        string
-	RedisPort        string
-	RedisPassword    string
-	RedisDB          int
+	TotalLimit    int
+	TimeLimit     int
+	FinalComment  string
+	APIConnection string
+	RedisHost     string
+	RedisPort     string
+	RedisPassword string
+	RedisDB       int
+	RedisCount    int
 }
 
 // Stats holds the application statistics
@@ -66,21 +68,11 @@ func (l *Logger) Close() error {
 
 // loadConfig loads the configuration from the .env file
 func loadConfig(filePath string) (*Config, error) {
-	config := &Config{
-		ButtonCodes: make(map[string]string),
-	}
+	config := &Config{}
 
 	// Load the .env file
 	if err := godotenv.Load(filePath); err != nil {
 		return nil, fmt.Errorf("error loading .env file: %v", err)
-	}
-
-	// Load button codes
-	buttonCodes := []string{"BUTTON_WW", "BUTTON_HH", "BUTTON_AA", "BUTTON_TT", "BUTTON_SPACE", "BUTTON_DOT", "BUTTON_QUESTION", "BUTTON_EXCLAMATION"}
-	for _, code := range buttonCodes {
-		if value, exists := os.LookupEnv(code); exists {
-			config.ButtonCodes[code] = value
-		}
 	}
 
 	// Load other configurations
@@ -92,6 +84,7 @@ func loadConfig(filePath string) (*Config, error) {
 	config.RedisPort = os.Getenv("REDIS_PORT")
 	config.RedisPassword = os.Getenv("REDIS_PASSWORD")
 	config.RedisDB = getEnvAsInt("REDIS_DB", 0)
+	config.RedisCount = getEnvAsInt("REDIS_COUNT", 5)
 
 	return config, nil
 }
@@ -113,14 +106,12 @@ func getEnvAsInt(key string, defaultValue int) int {
 // displayHomeScreen displays the home screen with buttons and parameters
 func displayHomeScreen(config *Config) {
 	fmt.Println("=== YouTube Stream Comments Processor ===")
-	fmt.Println("Buttons and Parameters:")
-	for code, value := range config.ButtonCodes {
-		fmt.Printf("  %s: %s\n", code, value)
-	}
+	fmt.Println("Parameters:")
 	fmt.Printf("Total Limit: %d\n", config.TotalLimit)
 	fmt.Printf("Time Limit: %d seconds\n", config.TimeLimit)
 	fmt.Printf("Final Comment: %s\n", config.FinalComment)
 	fmt.Printf("API Connection: %s\n", config.APIConnection)
+	fmt.Printf("Redis Count: %d\n", config.RedisCount)
 	fmt.Println("Press Enter to clear the console and start reading comments...")
 }
 
@@ -156,26 +147,60 @@ func readComments() <-chan string {
 }
 
 // processComment processes a comment and updates the stats
-func processComment(comment string, config *Config, stats *Stats, logger *Logger) bool {
+func processComment(comment string, config *Config, stats *Stats, logger *Logger, redisClient *redis.RedisClient, devMode bool) bool {
 	// Log the comment
-	if err := logger.LogComment(comment); err != nil {
-		log.Printf("Error logging comment: %v", err)
+	if logger != nil {
+		if err := logger.LogComment(comment); err != nil {
+			log.Printf("Error logging comment: %v", err)
+		}
+	} else if devMode {
+		fmt.Printf("Comment: %s\n", comment)
 	}
 
 	// Check for FINAL_COMMENT
 	if config.FinalComment != "" && strings.Contains(comment, config.FinalComment) {
-		if err := logger.LogEvent("FINAL_COMMENT detected"); err != nil {
-			log.Printf("Error logging event: %v", err)
+		if logger != nil {
+			if err := logger.LogEvent("FINAL_COMMENT detected"); err != nil {
+				log.Printf("Error logging event: %v", err)
+			}
 		}
 		return true
 	}
 
-	// Process the comment to find button codes
-	for code, word := range config.ButtonCodes {
-		if strings.Contains(comment, word) {
-			stats.LettersTyped++
-			stats.CommandsSent++
-			fmt.Printf("Button pressed: %s (Word: %s)\n", code, word)
+	// Check for double same letter or symbol
+	for _, char := range comment {
+		charStr := string(char)
+		if strings.Count(comment, charStr) >= 2 {
+			// Check if FINAL_COMMENT contains this letter/symbol
+			if strings.Contains(config.FinalComment, charStr) {
+				// Increment count in Redis
+				if err := redisClient.IncrementButtonCount(charStr); err != nil {
+					log.Printf("Error incrementing count for %s: %v", charStr, err)
+					continue
+				}
+
+				// Get current count
+				count, err := redisClient.GetButtonCount(charStr)
+				if err != nil {
+					log.Printf("Error getting count for %s: %v", charStr, err)
+					continue
+				}
+
+				// Check if count > REDIS_COUNT
+				if count > config.RedisCount {
+					// Reset count to 0
+					if err := redisClient.ResetButtonCount(charStr); err != nil {
+						log.Printf("Error resetting count for %s: %v", charStr, err)
+					}
+					// Increase total limit
+					config.TotalLimit++
+					// Print the letter
+					fmt.Printf("Letter: %s\n", charStr)
+				}
+
+				stats.LettersTyped++
+				stats.CommandsSent++
+			}
 		}
 	}
 
@@ -185,18 +210,35 @@ func processComment(comment string, config *Config, stats *Stats, logger *Logger
 
 // main is the entry point of the application
 func main() {
+	devMode := flag.Bool("dev", false, "Enable development mode (print comments to console)")
+	flag.Parse()
+
 	// Load configuration
 	config, err := loadConfig("example.env")
 	if err != nil {
 		log.Fatalf("Error loading configuration: %v", err)
 	}
 
-	// Initialize logger
-	logger, err := NewLogger("comments.log")
+	// Initialize Redis client
+	redisClient, err := redis.NewRedisClient(config.RedisHost, config.RedisPort, config.RedisPassword, config.RedisDB)
 	if err != nil {
-		log.Fatalf("Error initializing logger: %v", err)
+		log.Fatalf("Error initializing Redis client: %v", err)
 	}
-	defer logger.Close()
+	defer redisClient.Close()
+
+	// Initialize logger
+	var logger *Logger
+	if *devMode {
+		logger = nil // In dev mode, no file logging
+	} else {
+		timestamp := time.Now().Format("2006-01-02_15-04-05")
+		logFileName := fmt.Sprintf("comments_%s.log", timestamp)
+		logger, err = NewLogger(logFileName)
+		if err != nil {
+			log.Fatalf("Error initializing logger: %v", err)
+		}
+		defer logger.Close()
+	}
 
 	// Display home screen
 	displayHomeScreen(config)
@@ -222,7 +264,7 @@ func main() {
 			case <-done:
 				return
 			default:
-				if processComment(comment, config, stats, logger) {
+				if processComment(comment, config, stats, logger, redisClient, *devMode) {
 					close(done)
 					return
 				}

@@ -5,7 +5,7 @@ import (
 	"time"
 
 	"github.com/alicebob/miniredis/v2"
-	"github.com/go-redis/redis/v8"
+	"github.com/basel-ax/ycp/redis"
 )
 
 // TestLoadConfig tests the loadConfig function
@@ -26,6 +26,10 @@ func TestLoadConfig(t *testing.T) {
 	if config.FinalComment != "exit" {
 		t.Errorf("Expected FinalComment to be 'exit', got %s", config.FinalComment)
 	}
+
+	if config.RedisCount != 5 {
+		t.Errorf("Expected RedisCount to be 5, got %d", config.RedisCount)
+	}
 }
 
 // TestProcessComment tests the processComment function
@@ -42,9 +46,23 @@ func TestProcessComment(t *testing.T) {
 	}
 	defer logger.Close()
 
-	// Test with a comment containing a button word
+	// Create a mini Redis server for testing
+	server, err := miniredis.Run()
+	if err != nil {
+		t.Fatalf("Error starting mini Redis server: %v", err)
+	}
+	defer server.Close()
+
+	// Create a Redis client using the custom RedisClient
+	redisClient, err := redis.NewRedisClient("localhost", server.Port(), "", 0)
+	if err != nil {
+		t.Fatalf("Error creating Redis client: %v", err)
+	}
+	defer redisClient.Close()
+
+	// Test with a comment containing double letters in FINAL_COMMENT
 	comment := "ww"
-	shouldTerminate := processComment(comment, config, stats, logger)
+	shouldTerminate := processComment(comment, config, stats, logger, redisClient, false)
 	if shouldTerminate {
 		t.Errorf("Expected shouldTerminate to be false, got true")
 	}
@@ -53,17 +71,9 @@ func TestProcessComment(t *testing.T) {
 		t.Errorf("Expected CommentsRead to be 1, got %d", stats.CommentsRead)
 	}
 
-	if stats.LettersTyped != 1 {
-		t.Errorf("Expected LettersTyped to be 1, got %d", stats.LettersTyped)
-	}
-
-	if stats.CommandsSent != 1 {
-		t.Errorf("Expected CommandsSent to be 1, got %d", stats.CommandsSent)
-	}
-
 	// Test with FINAL_COMMENT
 	comment = "exit"
-	shouldTerminate = processComment(comment, config, stats, logger)
+	shouldTerminate = processComment(comment, config, stats, logger, redisClient, false)
 	if !shouldTerminate {
 		t.Errorf("Expected shouldTerminate to be true, got false")
 	}
@@ -78,19 +88,20 @@ func TestRedisIntegration(t *testing.T) {
 	}
 	defer server.Close()
 
-	// Create a Redis client
-	client := redis.NewClient(&redis.Options{
-		Addr: server.Addr(),
-	})
-	defer client.Close()
+	// Create a Redis client using the custom RedisClient
+	redisClient, err := redis.NewRedisClient("localhost", server.Port(), "", 0)
+	if err != nil {
+		t.Fatalf("Error creating Redis client: %v", err)
+	}
+	defer redisClient.Close()
 
 	// Test incrementing button count
-	err = client.Incr(client.Context(), "BUTTON_WW").Err()
+	err = redisClient.IncrementButtonCount("w")
 	if err != nil {
 		t.Fatalf("Error incrementing button count: %v", err)
 	}
 
-	count, err := client.Get(client.Context(), "BUTTON_WW").Int()
+	count, err := redisClient.GetButtonCount("w")
 	if err != nil {
 		t.Fatalf("Error getting button count: %v", err)
 	}
@@ -100,12 +111,12 @@ func TestRedisIntegration(t *testing.T) {
 	}
 
 	// Test incrementing total commands
-	err = client.Incr(client.Context(), "total_commands").Err()
+	err = redisClient.IncrementTotalCommands()
 	if err != nil {
 		t.Fatalf("Error incrementing total commands: %v", err)
 	}
 
-	totalCommands, err := client.Get(client.Context(), "total_commands").Int()
+	totalCommands, err := redisClient.GetTotalCommands()
 	if err != nil {
 		t.Fatalf("Error getting total commands: %v", err)
 	}

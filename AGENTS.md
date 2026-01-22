@@ -4,7 +4,7 @@
 This document provides instructions for an AI Agent to understand, set up, and run the YouTube Stream Comments Processor application.
 
 ## Project Description
-The YouTube Stream Comments Processor is a Golang console application that reads comments from a YouTube stream, processes them based on a configuration file, and interacts with Redis to track button presses. The application displays statistics and handles various edge cases such as time limits, command limits, and specific final comments.
+The YouTube Stream Comments Processor is a Golang console application that reads comments from a YouTube stream, processes them based on a configuration file, and interacts with Redis to track letter counts. The application checks for double letters/symbols in comments, compares them with the FINAL_COMMENT, and updates counts in Redis. If a count exceeds REDIS_COUNT, it resets the count, increases the total limit, and prints the letter. The application displays statistics and handles various edge cases such as time limits, command limits, and specific final comments.
 
 ## Setup Instructions
 
@@ -43,9 +43,14 @@ The YouTube Stream Comments Processor is a Golang console application that reads
 ## Running the Application
 
 ### Start the Application
-To start the application, run the following command:
+To start the application in normal mode (logs to file), run the following command:
 ```bash
 ./ycp
+```
+
+To start the application in development mode (prints comments to console), run the following command:
+```bash
+./ycp -dev
 ```
 
 ### Application Flow
@@ -57,26 +62,16 @@ To start the application, run the following command:
 ### Configuration Options
 The application can be configured using the `.env` file. Here are the available configuration options:
 
-- **Button Codes**: Define button codes and their corresponding words (e.g., `BUTTON_WW=w`).
 - **Total Limit**: Set the total limit on transmitted commands (`TOTAL_LIMIT=100`).
 - **Time Limit**: Set the time limit for completion in seconds (`TIME_LIMIT=3600`).
 - **Final Comment**: Set the FINAL_COMMENT to trigger early termination (`FINAL_COMMENT="exit"`).
 - **API Connection**: Set the API connection details (`API_CONNECTION=""`). If empty, the application will use mock data.
 - **Redis Connection**: Set the Redis connection details (`REDIS_HOST`, `REDIS_PORT`, `REDIS_PASSWORD`, `REDIS_DB`).
+- **Redis Count**: Set the threshold for resetting letter counts (`REDIS_COUNT=5`).
 
 ### Example Configuration
 Here is an example configuration file (`example.env`):
 ```env
-# Button codes and their corresponding words
-BUTTON_WW=w
-BUTTON_HH=h
-BUTTON_AA=a
-BUTTON_TT=t
-BUTTON_SPACE= 
-BUTTON_DOT=.
-BUTTON_QUESTION=?
-BUTTON_EXCLAMATION=!
-
 # Total limit on transmitted commands
 TOTAL_LIMIT=100
 
@@ -94,6 +89,9 @@ REDIS_HOST="localhost"
 REDIS_PORT="6379"
 REDIS_PASSWORD=""
 REDIS_DB=0
+
+# Redis count threshold
+REDIS_COUNT=5
 ```
 
 ## Testing the Application
@@ -119,7 +117,7 @@ The application includes the following test cases:
 3. **Configuration Errors**: Ensure the `.env` file is correctly formatted and all required fields are set.
 
 ### Debugging
-- **Logs**: The application logs comments and events to `comments.log`. Check this file for debugging information.
+- **Logs**: In normal mode, the application logs comments and events to a timestamped file (e.g., `comments_2023-01-01_12-00-00.log`). In development mode, comments are printed to the console.
 - **Console Output**: The application provides detailed console output during execution. Use this to identify issues.
 
 ## Conclusion

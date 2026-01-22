@@ -78,6 +78,12 @@ func (r *RedisClient) CheckLimitReached(limit int) (bool, error) {
 	return count >= limit, nil
 }
 
+// ResetButtonCount resets the count for a specific button to 0
+func (r *RedisClient) ResetButtonCount(buttonCode string) error {
+	ctx := context.Background()
+	return r.client.Set(ctx, buttonCode, 0, 0).Err()
+}
+
 // Close closes the Redis client connection
 func (r *RedisClient) Close() error {
 	return r.client.Close()

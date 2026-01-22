@@ -7,17 +7,15 @@ import (
 	"runtime"
 )
 
-// DisplayHomeScreen displays the home screen with buttons and parameters
-func DisplayHomeScreen(config map[string]string, totalLimit, timeLimit int, finalComment, apiConnection string) {
+// DisplayHomeScreen displays the home screen with parameters
+func DisplayHomeScreen(totalLimit, timeLimit, redisCount int, finalComment, apiConnection string) {
 	fmt.Println("=== YouTube Stream Comments Processor ===")
-	fmt.Println("Buttons and Parameters:")
-	for code, value := range config {
-		fmt.Printf("  %s: %s\n", code, value)
-	}
+	fmt.Println("Parameters:")
 	fmt.Printf("Total Limit: %d\n", totalLimit)
 	fmt.Printf("Time Limit: %d seconds\n", timeLimit)
 	fmt.Printf("Final Comment: %s\n", finalComment)
 	fmt.Printf("API Connection: %s\n", apiConnection)
+	fmt.Printf("Redis Count: %d\n", redisCount)
 	fmt.Println("Press Enter to clear the console and start reading comments...")
 }
 
