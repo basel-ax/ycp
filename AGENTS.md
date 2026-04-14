@@ -1,124 +1,60 @@
-# AI Agent Instructions for YouTube Stream Comments Processor
+# AGENTS.md
 
-## Overview
-This document provides instructions for an AI Agent to understand, set up, and run the YouTube Stream Comments Processor application.
+A simple, open format for guiding coding agents on the YouTube Stream Comments Processor project.
 
-## Project Description
-The YouTube Stream Comments Processor is a Golang console application that reads comments from a YouTube stream, processes them based on a configuration file, and interacts with Redis to track letter counts. The application checks for double letters/symbols in comments, compares them with the FINAL_COMMENT, and updates counts in Redis. If a count exceeds REDIS_COUNT, it resets the count, increases the total limit, and prints the letter. The application displays statistics and handles various edge cases such as time limits, command limits, and specific final comments.
+## Project Overview
+The YouTube Stream Comments Processor is a Golang console application that reads comments from a YouTube stream (mock or real via YouTube Data API v3), processes them based on a configuration file, and interacts with Redis to track letter counts. The application checks for double letters/symbols in comments, compares them with a FINAL_COMMENT string, and updates counts in Redis. When a count exceeds REDIS_COUNT, it resets the count, increases the total limit, and prints the triggering letter. The application displays statistics and handles various edge cases such as time limits, command limits, and specific final comments.
 
-## Setup Instructions
+## Build and Test Commands
+- Install Go dependencies: `go mod tidy`
+- Format code: `go fmt ./...`
+- Run all tests: `go test -v ./...`
+- Run tests for specific package: `go test -v ./package`
+- Build application: `go build -o ycp`
+- Run in development mode (prints to console): `./ycp -dev`
+- Run in normal mode (logs to file): `./ycp`
 
-### Prerequisites
-1. **Golang**: Ensure Golang is installed on your system. You can download it from [Golang's official website](https://golang.org/dl/).
-2. **Redis**: Ensure Redis is installed and running. You can download it from [Redis's official website](https://redis.io/download).
-3. **Dependencies**: The project uses the following dependencies:
-   - `github.com/joho/godotenv` for loading environment variables.
-   - `github.com/go-redis/redis/v8` for Redis integration.
-   - `github.com/alicebob/miniredis/v2` for testing Redis integration.
+## Code Style Guidelines
+- Use `go fmt` for formatting (run `go fmt ./...` before committing)
+- Group imports: standard library, then third-party, then local packages
+- Prefer explicit error handling: check errors, don't use `_` when action is needed
+- Use meaningful, descriptive names for variables and functions
+- Functions should do one thing well and be reasonably sized (<50 lines ideal)
+- Use interfaces for dependency injection (especially for Redis, Logger components)
+- Comment only when necessary (complex logic, non-obvious behavior)
+- Follow Go naming conventions: MixedCaps, no underscores for exported names
+- Keep functions focused and avoid deep nesting
+- Use struct composition over inheritance patterns
+- Handle errors close to where they occur when possible
 
-### Installation Steps
-1. **Clone the Repository**:
-   ```bash
-   git clone https://github.com/basel-ax/ycp.git
-   cd ycp
-   ```
+## Testing Instructions
+- Test files named *_test.go and colocated with source code
+- Redis integration tests use alicebob/miniredis/v2 for mock server
+- Aim for table-driven tests when testing multiple test cases
+- Mock external dependencies (Redis, HTTP clients) in unit tests
+- Integration tests verify real Redis interaction when applicable
 
-2. **Install Dependencies**:
-   ```bash
-   go mod tidy
-   ```
+## Project Structure
+- main.go: Application entry point containing core logic and YouTube integration
+- config/: Configuration loading and validation functionality
+- redis/: Redis client wrapper with interface abstraction
+- ui/: Console display functions (home screen, final screen, clear console)
 
-3. **Configure the Application**:
-   - Copy the `example.env` file to `.env`:
-     ```bash
-     cp example.env .env
-     ```
-   - Edit the `.env` file to set your desired configuration values.
+## YouTube Integration Notes
+- When STREAM_URL is empty: Uses built-in mock comment stream for testing
+- When STREAM_URL is set and YOUTUBE_API_KEY provided: Uses YouTube Data API v3 for real stream
+- Supported YouTube URL formats:
+  - https://www.youtube.com/watch?v=VIDEO_ID
+  - https://youtu.be/VIDEO_ID
+  - https://www.youtube.com/live/VIDEO_ID
+  - Just the VIDEO_ID
+- Fallback to mock on any API error or configuration issue
+- Video ID extraction handles various URL formats robustly
 
-4. **Build the Application**:
-   ```bash
-   go build -o ycp
-   ```
-
-## Running the Application
-
-### Start the Application
-To start the application in normal mode (logs to file), run the following command:
-```bash
-./ycp
-```
-
-To start the application in development mode (prints comments to console), run the following command:
-```bash
-./ycp -dev
-```
-
-### Application Flow
-1. **Home Screen**: The application will display a home screen with the configured buttons and parameters.
-2. **Start Processing**: Press Enter to clear the console and start reading comments from the stream.
-3. **Processing Comments**: The application will process comments from the stream, update Redis with button counts, and log comments.
-4. **Final Screen**: The application will display a final statistics screen when the total limit, time limit, or FINAL_COMMENT condition is met.
-
-### Configuration Options
-The application can be configured using the `.env` file. Here are the available configuration options:
-
-- **Total Limit**: Set the total limit on transmitted commands (`TOTAL_LIMIT=100`).
-- **Time Limit**: Set the time limit for completion in seconds (`TIME_LIMIT=3600`).
-- **Final Comment**: Set the FINAL_COMMENT to trigger early termination (`FINAL_COMMENT="exit"`).
-- **API Connection**: Set the API connection details (`API_CONNECTION=""`). If empty, the application will use mock data.
-- **Redis Connection**: Set the Redis connection details (`REDIS_HOST`, `REDIS_PORT`, `REDIS_PASSWORD`, `REDIS_DB`).
-- **Redis Count**: Set the threshold for resetting letter counts (`REDIS_COUNT=5`).
-
-### Example Configuration
-Here is an example configuration file (`example.env`):
-```env
-# Total limit on transmitted commands
-TOTAL_LIMIT=100
-
-# Time limit for completion (in seconds)
-TIME_LIMIT=3600
-
-# FINAL_COMMENT to trigger early termination
-FINAL_COMMENT="exit"
-
-# API connection details (leave empty to use mock)
-API_CONNECTION=""
-
-# Redis connection details
-REDIS_HOST="localhost"
-REDIS_PORT="6379"
-REDIS_PASSWORD=""
-REDIS_DB=0
-
-# Redis count threshold
-REDIS_COUNT=5
-```
-
-## Testing the Application
-
-### Running Tests
-To run the tests, use the following command:
-```bash
-go test -v
-```
-
-### Test Cases
-The application includes the following test cases:
-1. **Config Loading**: Tests the loading and parsing of the configuration file.
-2. **Comment Processing**: Tests the processing of comments and updating of statistics.
-3. **Redis Integration**: Tests the interaction with Redis for storing and retrieving button counts.
-4. **Comment Reading**: Tests the reading of comments from the stream.
-
-## Troubleshooting
-
-### Common Issues
-1. **Redis Connection Issues**: Ensure Redis is running and the connection details in the `.env` file are correct.
-2. **Dependency Issues**: Ensure all dependencies are installed using `go mod tidy`.
-3. **Configuration Errors**: Ensure the `.env` file is correctly formatted and all required fields are set.
-
-### Debugging
-- **Logs**: In normal mode, the application logs comments and events to a timestamped file (e.g., `comments_2023-01-01_12-00-00.log`). In development mode, comments are printed to the console.
-- **Console Output**: The application provides detailed console output during execution. Use this to identify issues.
-
-## Conclusion
-This document provides comprehensive instructions for setting up, running, and testing the YouTube Stream Comments Processor application. Follow these instructions to ensure a smooth and successful deployment.
+## Configuration
+- Loaded from .env file via github.com/joho/godotenv package
+- All configuration variables have sensible defaults
+- Config validation ensures TotalLimit, TimeLimit, and RedisCount are > 0
+- StreamURL: YouTube stream URL or video ID (empty = mock mode)
+- YouTubeAPIKey: YouTube Data API v3 key (required for real stream integration)
+- APIConnection: Reserved for future API integration features

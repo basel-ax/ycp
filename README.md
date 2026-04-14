@@ -64,10 +64,26 @@ The application can be configured using the `.env` file. Here are the available 
 
 - **Total Limit**: Set the total limit on transmitted commands (`TOTAL_LIMIT=100`).
 - **Time Limit**: Set the time limit for completion in seconds (`TIME_LIMIT=3600`).
-- **Final Comment**: Set the FINAL_COMMENT to trigger early termination (`FINAL_COMMENT="exit"`).
-- **API Connection**: Set the API connection details (`API_CONNECTION=""`). If empty, the application will use mock data.
+- **Final Comment**: Set the FINAL_COMMENT to trigger early termination (`FINAL_COMMENT=exit`).
+- **Stream URL**: Set the YouTube stream URL or video ID to read real comments (`STREAM_URL=`). When empty, uses mock data.
+- **YouTube API Key**: Set your YouTube Data API v3 key for real stream integration (`YOUTUBE_API_KEY=`). Optional - required only for live stream comments.
 - **Redis Connection**: Set the Redis connection details (`REDIS_HOST`, `REDIS_PORT`, `REDIS_PASSWORD`, `REDIS_DB`).
 - **Redis Count**: Set the threshold for resetting letter counts (`REDIS_COUNT=5`).
+
+### YouTube Integration Modes
+
+**Mock Mode (Default)**: When `STREAM_URL` is empty, the application uses built-in mock comments for testing.
+
+**Live Stream Mode**: To read real comments from a YouTube live stream:
+1. Get a YouTube Data API v3 key from Google Cloud Console
+2. Set `STREAM_URL` to a YouTube live video URL or ID (e.g., `https://www.youtube.com/watch?v=VIDEO_ID` or just `VIDEO_ID`)
+3. Set `YOUTUBE_API_KEY` to your API key
+
+Supported URL formats:
+- `https://www.youtube.com/watch?v=VIDEO_ID`
+- `https://youtu.be/VIDEO_ID`
+- `https://www.youtube.com/live/VIDEO_ID`
+- Just the video ID (`VIDEO_ID`)
 
 ## Testing
 The application includes comprehensive auto tests covering configuration loading, comment processing, Redis integration, and comment reading.
