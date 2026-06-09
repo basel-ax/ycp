@@ -36,6 +36,8 @@ func ClearConsole() {
 	} else {
 		cmd := exec.Command("clear")
 		cmd.Stdout = os.Stdout
-		cmd.Run()
+		if err := cmd.Run(); err != nil {
+			fmt.Fprintf(os.Stderr, "error clearing console: %v\n", err)
+		}
 	}
 }
