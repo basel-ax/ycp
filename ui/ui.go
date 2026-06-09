@@ -20,11 +20,21 @@ func DisplayHomeScreen(totalLimit, timeLimit, redisCount int, finalComment, apiC
 }
 
 // DisplayFinalScreen displays the final statistics screen
-func DisplayFinalScreen(commentsRead, lettersTyped, commandsSent int) {
+func DisplayFinalScreen(commentsRead, lettersTyped, commandsSent int, triggeredLetters []string) {
 	fmt.Println("=== Final Statistics ===")
 	fmt.Printf("Comments Read: %d\n", commentsRead)
 	fmt.Printf("Letters Typed: %d\n", lettersTyped)
 	fmt.Printf("Commands Sent: %d\n", commandsSent)
+	if len(triggeredLetters) > 0 {
+		fmt.Printf("Triggered Letters: ")
+		for i, l := range triggeredLetters {
+			if i > 0 {
+				fmt.Print(", ")
+			}
+			fmt.Print(l)
+		}
+		fmt.Println()
+	}
 }
 
 // ClearConsole clears the console

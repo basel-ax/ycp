@@ -18,12 +18,15 @@ import (
 	"github.com/basel-ax/ycp/config"
 	"github.com/basel-ax/ycp/redis"
 	"github.com/basel-ax/ycp/ui"
+	"golang.org/x/sys/unix"
+	"golang.org/x/term"
 )
 
 type Stats struct {
-	CommentsRead int
-	LettersTyped int
-	CommandsSent int
+	CommentsRead    int
+	LettersTyped    int
+	CommandsSent    int
+	TriggeredLetters []string
 }
 
 type Logger struct {
@@ -321,6 +324,7 @@ func processDoubleLetters(comment string, cfg *config.Config, stats *Stats, redi
 				log.Printf("Error resetting count for %s: %v", charStr, err)
 			}
 			cfg.TotalLimit++
+			stats.TriggeredLetters = append(stats.TriggeredLetters, charStr)
 			fmt.Printf("Letter: %s\n", charStr)
 		}
 
@@ -340,6 +344,54 @@ func processComment(comment string, cfg *config.Config, stats *Stats, logger *Lo
 
 	stats.CommentsRead++
 	return false
+}
+
+// listenForESC watches for ESC key press and cancels context to stop processing.
+// Uses raw terminal mode for single-keypress detection without Enter.
+func listenForESC(ctx context.Context, cancel context.CancelFunc, escPressed chan<- struct{}) {
+	fd := int(os.Stdin.Fd())
+
+	oldState, err := term.MakeRaw(fd)
+	if err != nil {
+		log.Printf("Warning: ESC listener not available: %v", err)
+		return
+	}
+	defer term.Restore(fd, oldState)
+
+	// Re-enable output processing — term.MakeRaw disables OPOST,
+	// which breaks \n → CR+LF translation and causes shifted output.
+	if ts, err := unix.IoctlGetTermios(fd, unix.TCGETS); err == nil {
+		ts.Oflag |= unix.OPOST
+		unix.IoctlSetTermios(fd, unix.TCSETS, ts)
+	}
+
+	buf := make([]byte, 1)
+	readCh := make(chan struct {
+		n   int
+		err error
+	}, 1)
+
+	go func() {
+		n, err := os.Stdin.Read(buf)
+		readCh <- struct {
+			n   int
+			err error
+		}{n, err}
+	}()
+
+	select {
+	case <-ctx.Done():
+		return
+	case result := <-readCh:
+		if result.err != nil || result.n == 0 {
+			return
+		}
+		if buf[0] == 27 { // ESC key
+			close(escPressed)
+			cancel()
+		}
+		return
+	}
 }
 
 func main() {
@@ -385,6 +437,9 @@ func main() {
 
 	comments := readComments(ctx, cfg)
 
+	escPressed := make(chan struct{})
+	go listenForESC(ctx, cancel, escPressed)
+
 	go func() {
 		defer cancel()
 		for comment := range comments {
@@ -398,6 +453,8 @@ func main() {
 	}()
 
 	select {
+	case <-escPressed:
+		fmt.Println("\nESC pressed. Stopping...")
 	case <-ctx.Done():
 		if stats.CommandsSent >= cfg.TotalLimit || stats.CommentsRead > 0 {
 			fmt.Println("\nProcessing completed.")
@@ -410,5 +467,5 @@ func main() {
 		fmt.Println("\nTime limit reached. Shutting down...")
 	}
 
-	ui.DisplayFinalScreen(stats.CommentsRead, stats.LettersTyped, stats.CommandsSent)
+	ui.DisplayFinalScreen(stats.CommentsRead, stats.LettersTyped, stats.CommandsSent, stats.TriggeredLetters)
 }

@@ -51,7 +51,7 @@ func TestDisplayFinalScreen_Output(t *testing.T) {
 	os.Stdout = w
 	defer func() { os.Stdout = old }()
 
-	DisplayFinalScreen(12, 34, 56)
+	DisplayFinalScreen(12, 34, 56, nil)
 	w.Close()
 	var buf bytes.Buffer
 	_, _ = buf.ReadFrom(r)
@@ -68,6 +68,24 @@ func TestDisplayFinalScreen_Output(t *testing.T) {
 	}
 	if !strings.Contains(out, "Commands Sent: 56") {
 		t.Errorf("expected final screen to include 'Commands Sent: 56', got:\n%s", out)
+	}
+}
+
+// Test that DisplayFinalScreen shows triggered letters
+func TestDisplayFinalScreen_WithTriggeredLetters(t *testing.T) {
+	old := os.Stdout
+	r, w, _ := os.Pipe()
+	os.Stdout = w
+	defer func() { os.Stdout = old }()
+
+	DisplayFinalScreen(10, 5, 5, []string{"t", "?", "!"})
+	w.Close()
+	var buf bytes.Buffer
+	_, _ = buf.ReadFrom(r)
+	out := buf.String()
+
+	if !strings.Contains(out, "Triggered Letters: t, ?, !") {
+		t.Errorf("expected triggered letters in output, got:\n%s", out)
 	}
 }
 
