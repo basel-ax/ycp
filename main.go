@@ -80,6 +80,10 @@ func extractVideoID(streamURL string) (string, error) {
 		return after, nil
 	}
 
+	if parsedURL.Host == "" && parsedURL.Scheme == "" {
+		return parsedURL.Path, nil
+	}
+
 	return "", fmt.Errorf("unable to extract video ID from URL: %s", streamURL)
 }
 
@@ -342,7 +346,7 @@ func main() {
 	devMode := flag.Bool("dev", false, "Enable development mode (print comments to console)")
 	flag.Parse()
 
-	cfg, err := config.LoadConfig("example.env")
+	cfg, err := config.LoadConfig(".env")
 	if err != nil {
 		log.Fatalf("Error loading configuration: %v", err)
 	}
