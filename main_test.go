@@ -1,6 +1,8 @@
 package main
 
 import (
+	"context"
+	"os"
 	"testing"
 	"time"
 
@@ -44,6 +46,7 @@ func TestProcessComment(t *testing.T) {
 		t.Fatalf("Error initializing logger: %v", err)
 	}
 	defer logger.Close()
+	defer cleanupTestLog()
 
 	server, err := miniredis.Run()
 	if err != nil {
@@ -80,7 +83,7 @@ func TestReadComments(t *testing.T) {
 		t.Fatalf("Error loading config: %v", err)
 	}
 
-	comments := readComments(cfg)
+	comments := readComments(context.Background(), cfg)
 	timeout := time.After(5 * time.Second)
 	count := 0
 
@@ -95,4 +98,8 @@ func TestReadComments(t *testing.T) {
 			return
 		}
 	}
+}
+
+func cleanupTestLog() {
+	os.Remove("test_comments.log")
 }

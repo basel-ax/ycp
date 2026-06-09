@@ -1,7 +1,7 @@
 package main
 
 import (
-	"bufio"
+	"context"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -17,9 +17,8 @@ import (
 
 	"github.com/basel-ax/ycp/config"
 	"github.com/basel-ax/ycp/redis"
+	"github.com/basel-ax/ycp/ui"
 )
-
-type Config = config.Config
 
 type Stats struct {
 	CommentsRead int
@@ -53,29 +52,6 @@ func (l *Logger) Close() error {
 	return l.file.Close()
 }
 
-func displayHomeScreen(cfg *Config) {
-	fmt.Println("=== YouTube Stream Comments Processor ===")
-	fmt.Println("Parameters:")
-	fmt.Printf("Total Limit: %d\n", cfg.TotalLimit)
-	fmt.Printf("Time Limit: %d seconds\n", cfg.TimeLimit)
-	fmt.Printf("Final Comment: %s\n", cfg.FinalComment)
-	fmt.Printf("API Connection: %s\n", cfg.APIConnection)
-	fmt.Printf("Stream URL: %s\n", cfg.StreamURL)
-	fmt.Printf("Redis Count: %d\n", cfg.RedisCount)
-	fmt.Println("Press Enter to clear the console and start reading comments...")
-}
-
-func displayFinalScreen(stats *Stats) {
-	fmt.Println("=== Final Statistics ===")
-	fmt.Printf("Comments Read: %d\n", stats.CommentsRead)
-	fmt.Printf("Letters Typed: %d\n", stats.LettersTyped)
-	fmt.Printf("Commands Sent: %d\n", stats.CommandsSent)
-}
-
-func clearConsole() {
-	fmt.Print("\033[H\033[2J")
-}
-
 func extractVideoID(streamURL string) (string, error) {
 	if streamURL == "" {
 		return "", fmt.Errorf("empty stream URL")
@@ -96,18 +72,18 @@ func extractVideoID(streamURL string) (string, error) {
 		return v, nil
 	}
 
-	if strings.HasPrefix(parsedURL.Path, "/live/") {
-		return strings.TrimPrefix(parsedURL.Path, "/live/"), nil
+	if after, ok := strings.CutPrefix(parsedURL.Path, "/live/"); ok {
+		return after, nil
 	}
 
-	if strings.HasPrefix(parsedURL.Path, "/shorts/") {
-		return strings.TrimPrefix(parsedURL.Path, "/shorts/"), nil
+	if after, ok := strings.CutPrefix(parsedURL.Path, "/shorts/"); ok {
+		return after, nil
 	}
 
 	return "", fmt.Errorf("unable to extract video ID from URL: %s", streamURL)
 }
 
-func fetchYouTubeComments(videoID, apiKey string) <-chan string {
+func fetchYouTubeComments(ctx context.Context, videoID, apiKey string) <-chan string {
 	comments := make(chan string)
 	go func() {
 		defer close(comments)
@@ -119,7 +95,7 @@ func fetchYouTubeComments(videoID, apiKey string) <-chan string {
 
 		log.Printf("YouTube API: Fetching live chat for video %s", videoID)
 
-		client := &http.Client{}
+		client := &http.Client{Timeout: 30 * time.Second}
 
 		videoResp, err := getVideoDetails(videoID, apiKey, client)
 		if err != nil {
@@ -137,6 +113,13 @@ func fetchYouTubeComments(videoID, apiKey string) <-chan string {
 
 		nextPageToken := ""
 		for {
+			select {
+			case <-ctx.Done():
+				log.Println("YouTube API: context cancelled, stopping fetch")
+				return
+			default:
+			}
+
 			msgResp, err := getLiveChatMessages(liveChatID, apiKey, nextPageToken, client)
 			if err != nil {
 				log.Printf("YouTube API: Error fetching messages: %v", err)
@@ -146,7 +129,12 @@ func fetchYouTubeComments(videoID, apiKey string) <-chan string {
 
 			for _, item := range msgResp.Items {
 				if item.Snippet.DisplayMessage != "" {
-					comments <- item.Snippet.DisplayMessage
+					select {
+					case comments <- item.Snippet.DisplayMessage:
+					case <-ctx.Done():
+						log.Println("YouTube API: context cancelled while sending")
+						return
+					}
 				}
 			}
 
@@ -236,20 +224,23 @@ func getLiveChatMessages(liveChatID, apiKey, pageToken string, client *http.Clie
 	return result, nil
 }
 
-func readComments(cfg *Config) <-chan string {
+func readComments(ctx context.Context, cfg *config.Config) <-chan string {
 	if cfg.StreamURL != "" && cfg.YouTubeAPIKey != "" {
 		videoID, err := extractVideoID(cfg.StreamURL)
 		if err != nil {
 			log.Printf("Error extracting video ID: %v", err)
 			log.Println("Falling back to mock comments")
 		} else {
-			ytComments := fetchYouTubeComments(videoID, cfg.YouTubeAPIKey)
+			ytCtx, ytCancel := context.WithCancel(ctx)
+
+			ytComments := fetchYouTubeComments(ytCtx, videoID, cfg.YouTubeAPIKey)
 			select {
 			case msg, ok := <-ytComments:
 				if ok {
 					go func() {
 						for range ytComments {
 						}
+						ytCancel()
 					}()
 					log.Printf("YouTube API connected with message: %s", msg)
 					return ytComments
@@ -257,6 +248,8 @@ func readComments(cfg *Config) <-chan string {
 			case <-time.After(3 * time.Second):
 				log.Println("YouTube API timeout, falling back to mock comments")
 			}
+
+			ytCancel()
 		}
 	}
 
@@ -269,14 +262,18 @@ func readComments(cfg *Config) <-chan string {
 			"exit",
 		}
 		for _, c := range mockComments {
-			comments <- c
+			select {
+			case comments <- c:
+			case <-ctx.Done():
+				return
+			}
 			time.Sleep(1 * time.Second)
 		}
 	}()
 	return comments
 }
 
-func processComment(comment string, cfg *Config, stats *Stats, logger *Logger, redisClient *redis.RedisClient, devMode bool) bool {
+func logOrPrintComment(comment string, logger *Logger, devMode bool) {
 	if logger != nil {
 		if err := logger.LogComment(comment); err != nil {
 			log.Printf("Error logging comment: %v", err)
@@ -284,7 +281,9 @@ func processComment(comment string, cfg *Config, stats *Stats, logger *Logger, r
 	} else if devMode {
 		fmt.Printf("Comment: %s\n", comment)
 	}
+}
 
+func checkFinalComment(comment string, cfg *config.Config, logger *Logger) bool {
 	if cfg.FinalComment != "" && strings.Contains(comment, cfg.FinalComment) {
 		if logger != nil {
 			if err := logger.LogEvent("FINAL_COMMENT detected"); err != nil {
@@ -293,7 +292,10 @@ func processComment(comment string, cfg *Config, stats *Stats, logger *Logger, r
 		}
 		return true
 	}
+	return false
+}
 
+func processDoubleLetters(comment string, cfg *config.Config, stats *Stats, redisClient *redis.RedisClient) {
 	seen := make(map[rune]bool)
 	for _, char := range comment {
 		if seen[char] {
@@ -302,32 +304,35 @@ func processComment(comment string, cfg *Config, stats *Stats, logger *Logger, r
 		seen[char] = true
 
 		charStr := string(char)
-		if strings.Count(comment, charStr) >= 2 {
-			if strings.Contains(cfg.FinalComment, charStr) {
-				if err := redisClient.IncrementButtonCount(charStr); err != nil {
-					log.Printf("Error incrementing count for %s: %v", charStr, err)
-					continue
-				}
-
-				count, err := redisClient.GetButtonCount(charStr)
-				if err != nil {
-					log.Printf("Error getting count for %s: %v", charStr, err)
-					continue
-				}
-
-				if count > cfg.RedisCount {
-					if err := redisClient.ResetButtonCount(charStr); err != nil {
-						log.Printf("Error resetting count for %s: %v", charStr, err)
-					}
-					cfg.TotalLimit++
-					fmt.Printf("Letter: %s\n", charStr)
-				}
-
-				stats.LettersTyped++
-				stats.CommandsSent++
+		if strings.Count(comment, charStr) >= 2 && strings.Contains(cfg.FinalComment, charStr) {
+			count, err := redisClient.IncrementButtonCount(charStr)
+			if err != nil {
+				log.Printf("Error incrementing count for %s: %v", charStr, err)
+				continue
 			}
+
+			if count > cfg.RedisCount {
+				if err := redisClient.ResetButtonCount(charStr); err != nil {
+					log.Printf("Error resetting count for %s: %v", charStr, err)
+				}
+				cfg.TotalLimit++
+				fmt.Printf("Letter: %s\n", charStr)
+			}
+
+			stats.LettersTyped++
+			stats.CommandsSent++
 		}
 	}
+}
+
+func processComment(comment string, cfg *config.Config, stats *Stats, logger *Logger, redisClient *redis.RedisClient, devMode bool) bool {
+	logOrPrintComment(comment, logger, devMode)
+
+	if checkFinalComment(comment, cfg, logger) {
+		return true
+	}
+
+	processDoubleLetters(comment, cfg, stats, redisClient)
 
 	stats.CommentsRead++
 	return false
@@ -361,45 +366,45 @@ func main() {
 		defer logger.Close()
 	}
 
-	displayHomeScreen(cfg)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 
-	bufio.NewReader(os.Stdin).ReadBytes('\n')
-	clearConsole()
+	ui.DisplayHomeScreen(cfg.TotalLimit, cfg.TimeLimit, cfg.RedisCount, cfg.FinalComment, cfg.APIConnection)
+
+	fmt.Scanln()
+	ui.ClearConsole()
 
 	stats := &Stats{}
 
 	signals := make(chan os.Signal, 1)
 	signal.Notify(signals, syscall.SIGINT, syscall.SIGTERM)
 
-	comments := readComments(cfg)
-	done := make(chan bool)
+	comments := readComments(ctx, cfg)
 
 	go func() {
+		defer cancel()
 		for comment := range comments {
-			select {
-			case <-done:
+			if processComment(comment, cfg, stats, logger, redisClient, *devMode) {
 				return
-			default:
-				if processComment(comment, cfg, stats, logger, redisClient, *devMode) {
-					close(done)
-					return
-				}
-				if stats.CommandsSent >= cfg.TotalLimit {
-					close(done)
-					return
-				}
+			}
+			if stats.CommandsSent >= cfg.TotalLimit {
+				return
 			}
 		}
 	}()
 
 	select {
-	case <-done:
-		fmt.Println("\nProcessing completed.")
+	case <-ctx.Done():
+		if stats.CommandsSent >= cfg.TotalLimit || stats.CommentsRead > 0 {
+			fmt.Println("\nProcessing completed.")
+		}
 	case <-signals:
+		cancel()
 		fmt.Println("\nReceived interrupt signal. Shutting down...")
 	case <-time.After(time.Duration(cfg.TimeLimit) * time.Second):
+		cancel()
 		fmt.Println("\nTime limit reached. Shutting down...")
 	}
 
-	displayFinalScreen(stats)
+	ui.DisplayFinalScreen(stats.CommentsRead, stats.LettersTyped, stats.CommandsSent)
 }
