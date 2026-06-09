@@ -3,9 +3,12 @@ package redis
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/go-redis/redis/v8"
 )
+
+const defaultTimeout = 5 * time.Second
 
 // RedisClient handles interactions with Redis
 type RedisClient struct {
@@ -20,8 +23,10 @@ func NewRedisClient(host, port, password string, db int) (*RedisClient, error) {
 		DB:       db,
 	})
 
-	// Test the connection
-	_, err := client.Ping(context.Background()).Result()
+	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
+	defer cancel()
+
+	_, err := client.Ping(ctx).Result()
 	if err != nil {
 		return nil, fmt.Errorf("error connecting to Redis: %v", err)
 	}
@@ -29,16 +34,21 @@ func NewRedisClient(host, port, password string, db int) (*RedisClient, error) {
 	return &RedisClient{client: client}, nil
 }
 
-// IncrementButtonCount increments the count for a specific button
-func (r *RedisClient) IncrementButtonCount(buttonCode string) error {
-	ctx := context.Background()
-	_, err := r.client.Incr(ctx, buttonCode).Result()
-	return err
+// IncrementButtonCount increments the count for a specific button and returns the new count
+func (r *RedisClient) IncrementButtonCount(buttonCode string) (int, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
+	defer cancel()
+	count, err := r.client.Incr(ctx, buttonCode).Result()
+	if err != nil {
+		return 0, err
+	}
+	return int(count), nil
 }
 
 // GetButtonCount gets the count for a specific button
 func (r *RedisClient) GetButtonCount(buttonCode string) (int, error) {
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
+	defer cancel()
 	count, err := r.client.Get(ctx, buttonCode).Int()
 	if err != nil {
 		if err == redis.Nil {
@@ -49,38 +59,10 @@ func (r *RedisClient) GetButtonCount(buttonCode string) (int, error) {
 	return count, nil
 }
 
-// IncrementTotalCommands increments the total number of transmitted commands
-func (r *RedisClient) IncrementTotalCommands() error {
-	ctx := context.Background()
-	_, err := r.client.Incr(ctx, "total_commands").Result()
-	return err
-}
-
-// GetTotalCommands gets the total number of transmitted commands
-func (r *RedisClient) GetTotalCommands() (int, error) {
-	ctx := context.Background()
-	count, err := r.client.Get(ctx, "total_commands").Int()
-	if err != nil {
-		if err == redis.Nil {
-			return 0, nil
-		}
-		return 0, err
-	}
-	return count, nil
-}
-
-// CheckLimitReached checks if the total limit on transmitted commands has been reached
-func (r *RedisClient) CheckLimitReached(limit int) (bool, error) {
-	count, err := r.GetTotalCommands()
-	if err != nil {
-		return false, err
-	}
-	return count >= limit, nil
-}
-
 // ResetButtonCount resets the count for a specific button to 0
 func (r *RedisClient) ResetButtonCount(buttonCode string) error {
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
+	defer cancel()
 	return r.client.Set(ctx, buttonCode, 0, 0).Err()
 }
 
