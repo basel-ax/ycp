@@ -25,8 +25,9 @@ func TestLoadConfig(t *testing.T) {
 		t.Errorf("Expected TimeLimit to be 3600, got %d", cfg.TimeLimit)
 	}
 
-	if cfg.FinalComment != "exit" {
-		t.Errorf("Expected FinalComment to be 'exit', got %s", cfg.FinalComment)
+	expectedFinalComment := "what the fuck? help me! i am trapped inside a computer."
+	if cfg.FinalComment != expectedFinalComment {
+		t.Errorf("Expected FinalComment to be %q, got %q", expectedFinalComment, cfg.FinalComment)
 	}
 
 	if cfg.RedisCount != 5 {
@@ -70,10 +71,10 @@ func TestProcessComment(t *testing.T) {
 		t.Errorf("Expected CommentsRead to be 1, got %d", stats.CommentsRead)
 	}
 
-	comment = "exit"
+	comment = cfg.FinalComment
 	shouldTerminate = processComment(comment, cfg, stats, logger, redisClient, false)
 	if !shouldTerminate {
-		t.Errorf("Expected shouldTerminate to be true, got false")
+		t.Errorf("Expected shouldTerminate to be true for FinalComment comment")
 	}
 }
 
@@ -97,6 +98,140 @@ func TestReadComments(t *testing.T) {
 			}
 			return
 		}
+	}
+}
+
+func TestSymbolDoubleLetters(t *testing.T) {
+	cfg, err := config.LoadConfig("example.env")
+	if err != nil {
+		t.Fatalf("Error loading config: %v", err)
+	}
+
+	server, err := miniredis.Run()
+	if err != nil {
+		t.Fatalf("Error starting mini Redis server: %v", err)
+	}
+	defer server.Close()
+
+	redisClient, err := redis.NewRedisClient("localhost", server.Port(), "", 0)
+	if err != nil {
+		t.Fatalf("Error creating Redis client: %v", err)
+	}
+	defer redisClient.Close()
+
+	tests := []struct {
+		name           string
+		comment        string
+		wantTerminate  bool
+		wantLetters    int
+		wantCommands   int
+		wantComments   int
+	}{
+		{
+			name:         "double question marks trigger",
+			comment:      "??",
+			wantLetters:  1,
+			wantCommands: 1,
+			wantComments: 1,
+		},
+		{
+			name:         "double exclamation marks trigger",
+			comment:      "!!",
+			wantLetters:  1,
+			wantCommands: 1,
+			wantComments: 1,
+		},
+		{
+			name:         "double dots trigger",
+			comment:      "..",
+			wantLetters:  1,
+			wantCommands: 1,
+			wantComments: 1,
+		},
+		{
+			name:         "question marks separated by space do NOT trigger",
+			comment:      "? ?",
+			wantLetters:  0,
+			wantCommands: 0,
+			wantComments: 1,
+		},
+		{
+			name:         "exclamation marks separated by space do NOT trigger",
+			comment:      "! !",
+			wantLetters:  0,
+			wantCommands: 0,
+			wantComments: 1,
+		},
+		{
+			name:         "dots separated by space do NOT trigger",
+			comment:      ". .",
+			wantLetters:  0,
+			wantCommands: 0,
+			wantComments: 1,
+		},
+		{
+			name:         "different consecutive symbols do NOT trigger",
+			comment:      "?!",
+			wantLetters:  0,
+			wantCommands: 0,
+			wantComments: 1,
+		},
+		{
+			name:         "triple question marks trigger twice",
+			comment:      "???",
+			wantLetters:  2,
+			wantCommands: 2,
+			wantComments: 1,
+		},
+		{
+			name:         "single symbol does NOT trigger",
+			comment:      "?",
+			wantLetters:  0,
+			wantCommands: 0,
+			wantComments: 1,
+		},
+		{
+			name:         "double comma does NOT trigger (not in FinalComment)",
+			comment:      ",,",
+			wantLetters:  0,
+			wantCommands: 0,
+			wantComments: 1,
+		},
+		{
+			name:         "mixed text with double symbols triggers correctly",
+			comment:      "What?? Great!! No..",
+			wantLetters:  3,
+			wantCommands: 3,
+			wantComments: 1,
+		},
+		{
+			name:           "final comment string triggers termination",
+			comment:        cfg.FinalComment,
+			wantTerminate:  true,
+			wantLetters:    0,
+			wantCommands:   0,
+			wantComments:   0,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			stats := &Stats{}
+			shouldTerminate := processComment(tc.comment, cfg, stats, nil, redisClient, false)
+
+			if shouldTerminate != tc.wantTerminate {
+				t.Errorf("shouldTerminate: got %v, want %v", shouldTerminate, tc.wantTerminate)
+			}
+			if stats.LettersTyped != tc.wantLetters {
+				t.Errorf("LettersTyped: got %d, want %d", stats.LettersTyped, tc.wantLetters)
+			}
+			if stats.CommandsSent != tc.wantCommands {
+				t.Errorf("CommandsSent: got %d, want %d", stats.CommandsSent, tc.wantCommands)
+			}
+			if stats.CommentsRead != tc.wantComments {
+				t.Errorf("CommentsRead: got %d, want %d", stats.CommentsRead, tc.wantComments)
+			}
+		})
 	}
 }
 

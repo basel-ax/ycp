@@ -68,3 +68,8 @@ The YouTube Stream Comments Processor is a Go 1.25 console application that read
 - StreamURL: YouTube stream URL or video ID (empty = mock mode)
 - YouTubeAPIKey: YouTube Data API v3 key (required for real stream integration)
 - APIConnection: Reserved for future API integration features
+
+## Security
+- `.env` is gitignored — real API keys and secrets go there
+- `example.env` is a public template — **NEVER** put real secrets (API keys, passwords) in it
+- Before committing, verify no secrets leaked into staged files with `git diff --cached`

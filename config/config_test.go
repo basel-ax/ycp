@@ -17,8 +17,9 @@ func TestLoadConfig_ValidFile(t *testing.T) {
 	if cfg.TimeLimit != 3600 {
 		t.Fatalf("Expected TimeLimit to be 3600, got %d", cfg.TimeLimit)
 	}
-	if cfg.FinalComment != "exit" {
-		t.Fatalf("Expected FinalComment to be 'exit', got %q", cfg.FinalComment)
+	expected := "what the fuck? help me! i am trapped inside a computer."
+	if cfg.FinalComment != expected {
+		t.Fatalf("Expected FinalComment to be %q, got %q", expected, cfg.FinalComment)
 	}
 	if cfg.APIConnection != "" {
 		t.Fatalf("Expected APIConnection to be empty, got %q", cfg.APIConnection)

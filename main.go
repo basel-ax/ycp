@@ -300,32 +300,32 @@ func checkFinalComment(comment string, cfg *config.Config, logger *Logger) bool 
 }
 
 func processDoubleLetters(comment string, cfg *config.Config, stats *Stats, redisClient *redis.RedisClient) {
-	seen := make(map[rune]bool)
-	for _, char := range comment {
-		if seen[char] {
+	for i := 0; i < len(comment)-1; i++ {
+		if comment[i] != comment[i+1] {
 			continue
 		}
-		seen[char] = true
 
-		charStr := string(char)
-		if strings.Count(comment, charStr) >= 2 && strings.Contains(cfg.FinalComment, charStr) {
-			count, err := redisClient.IncrementButtonCount(charStr)
-			if err != nil {
-				log.Printf("Error incrementing count for %s: %v", charStr, err)
-				continue
-			}
-
-			if count > cfg.RedisCount {
-				if err := redisClient.ResetButtonCount(charStr); err != nil {
-					log.Printf("Error resetting count for %s: %v", charStr, err)
-				}
-				cfg.TotalLimit++
-				fmt.Printf("Letter: %s\n", charStr)
-			}
-
-			stats.LettersTyped++
-			stats.CommandsSent++
+		charStr := string(comment[i])
+		if !strings.Contains(cfg.FinalComment, charStr) {
+			continue
 		}
+
+		count, err := redisClient.IncrementButtonCount(charStr)
+		if err != nil {
+			log.Printf("Error incrementing count for %s: %v", charStr, err)
+			continue
+		}
+
+		if count > cfg.RedisCount {
+			if err := redisClient.ResetButtonCount(charStr); err != nil {
+				log.Printf("Error resetting count for %s: %v", charStr, err)
+			}
+			cfg.TotalLimit++
+			fmt.Printf("Letter: %s\n", charStr)
+		}
+
+		stats.LettersTyped++
+		stats.CommandsSent++
 	}
 }
 
