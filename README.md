@@ -39,8 +39,13 @@ This is a Golang console application that reads comments from a YouTube stream, 
    go build -o ycp
    ```
 
+5. (Optional) Run tests:
+   ```bash
+   go test -v ./...
+   ```
+
 ## Prerequisites
-- Golang 1.19 or higher
+- Go 1.25.3 or higher
 - Redis server running (for production use)
 
 ## Running the Application
@@ -90,10 +95,10 @@ The application includes comprehensive auto tests covering configuration loading
 
 To run the tests, use the following command:
 ```bash
-go test -v
+go test -v ./...
 ```
 
-The tests use a mini Redis server for integration testing and mock data for comment processing.
+The tests use a mini Redis server (miniredis) for integration testing and mock data for comment processing. Press Ctrl+C at any time to gracefully shut down.
 
 ## Troubleshooting
 - **Redis Connection Issues**: Ensure Redis is running and the connection details in the `.env` file are correct.

@@ -27,6 +27,12 @@ go.work.sum
 # env file
 .env
 
+# Project binary
+/ycp
+
+# Test artifacts and logs
+*.log
+
 # Editor/IDE
 # .idea/
 # .vscode/
