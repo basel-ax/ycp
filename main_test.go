@@ -8,6 +8,7 @@ import (
 
 	"github.com/alicebob/miniredis/v2"
 	"github.com/basel-ax/ycp/config"
+	"github.com/basel-ax/ycp/processor"
 	"github.com/basel-ax/ycp/redis"
 )
 
@@ -61,8 +62,10 @@ func TestProcessComment(t *testing.T) {
 	}
 	defer redisClient.Close()
 
+	proc := processor.New(cfg, stats, redisClient, logger, false)
+
 	comment := "ww"
-	shouldTerminate := processComment(comment, cfg, stats, logger, redisClient, false)
+	shouldTerminate := proc.Process(comment)
 	if shouldTerminate {
 		t.Errorf("Expected shouldTerminate to be false, got true")
 	}
@@ -72,7 +75,7 @@ func TestProcessComment(t *testing.T) {
 	}
 
 	comment = cfg.FinalComment
-	shouldTerminate = processComment(comment, cfg, stats, logger, redisClient, false)
+	shouldTerminate = proc.Process(comment)
 	if !shouldTerminate {
 		t.Errorf("Expected shouldTerminate to be true for FinalComment comment")
 	}
@@ -120,12 +123,12 @@ func TestSymbolDoubleLetters(t *testing.T) {
 	defer redisClient.Close()
 
 	tests := []struct {
-		name           string
-		comment        string
-		wantTerminate  bool
-		wantLetters    int
-		wantCommands   int
-		wantComments   int
+		name          string
+		comment       string
+		wantTerminate bool
+		wantLetters   int
+		wantCommands  int
+		wantComments  int
 	}{
 		{
 			name:         "double question marks trigger",
@@ -205,19 +208,20 @@ func TestSymbolDoubleLetters(t *testing.T) {
 			wantComments: 1,
 		},
 		{
-			name:           "final comment string triggers termination",
-			comment:        cfg.FinalComment,
-			wantTerminate:  true,
-			wantLetters:    0,
-			wantCommands:   0,
-			wantComments:   0,
+			name:          "final comment string triggers termination",
+			comment:       cfg.FinalComment,
+			wantTerminate: true,
+			wantLetters:   0,
+			wantCommands:  0,
+			wantComments:  0,
 		},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			stats := &Stats{}
-			shouldTerminate := processComment(tc.comment, cfg, stats, nil, redisClient, false)
+			proc := processor.New(cfg, stats, redisClient, nil, false)
+			shouldTerminate := proc.Process(tc.comment)
 
 			if shouldTerminate != tc.wantTerminate {
 				t.Errorf("shouldTerminate: got %v, want %v", shouldTerminate, tc.wantTerminate)
