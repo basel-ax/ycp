@@ -69,20 +69,26 @@ func readComments(ctx context.Context, cfg *config.Config) <-chan string {
 			ytCtx, ytCancel := context.WithCancel(ctx)
 
 			ytComments := youtube.FetchComments(ytCtx, videoID, cfg.YouTubeAPIKey)
-			select {
-			case msg, ok := <-ytComments:
-				if ok {
-					go func() {
-						for range ytComments {
-						}
-						ytCancel()
-					}()
-					log.Printf("YouTube API connected with message: %s", msg)
-					return ytComments
+
+				select {
+				case msg, ok := <-ytComments:
+					if ok {
+						log.Printf("YouTube API connected with message: %s", msg)
+						// Forward first message + remaining on a merged channel
+						ch := make(chan string, 1)
+						go func() {
+							defer close(ch)
+							defer ytCancel()
+							ch <- msg
+							for m := range ytComments {
+								ch <- m
+							}
+						}()
+						return ch
+					}
+				case <-time.After(3 * time.Second):
+					log.Println("YouTube API timeout, falling back to mock comments")
 				}
-			case <-time.After(3 * time.Second):
-				log.Println("YouTube API timeout, falling back to mock comments")
-			}
 
 			ytCancel()
 		}
@@ -154,17 +160,18 @@ func main() {
 	}
 	defer redisClient.Close()
 
-	var logger *Logger
+	var logger processor.CommentLogger
 	if *devMode {
 		logger = nil
 	} else {
 		timestamp := time.Now().Format("2006-01-02_15-04-05")
 		logFileName := fmt.Sprintf("comments_%s.log", timestamp)
-		logger, err = NewLogger(logFileName)
+		realLogger, err := NewLogger(logFileName)
 		if err != nil {
 			log.Fatalf("Error initializing logger: %v", err)
 		}
-		defer logger.Close()
+		logger = realLogger
+		defer realLogger.Close()
 	}
 
 	// Errors still go into the log file via the Logger.

@@ -101,7 +101,7 @@ func (p *Processor) processDoubleLetters(comment string) {
 			continue
 		}
 
-		if count > p.cfg.RedisCount {
+		if count >= p.cfg.RedisCount {
 			if err := p.counter.ResetButtonCount(charStr); err != nil {
 				log.Printf("Error resetting count for %s: %v", charStr, err)
 			}
