@@ -30,9 +30,10 @@ func DisplayHomeScreen(totalLimit, timeLimit, redisCount int, finalComment, apiC
 // on the left 2/3 and statistics on the right 1/3.
 func DisplayFinalScreen(commentsRead, lettersTyped, commandsSent int, triggeredLetters []string) {
 	fd := int(os.Stdout.Fd())
-	width, _, err := term.GetSize(fd)
+	width, height, err := term.GetSize(fd)
 	if err != nil || width < 60 {
 		width = 120
+		height = 40
 	}
 
 	// If no graphics directory or no files, fall back to text
@@ -60,41 +61,38 @@ func DisplayFinalScreen(commentsRead, lettersTyped, commandsSent int, triggeredL
 		return
 	}
 
-	// Print the ANSI image
-	fmt.Print(result)
-
 	// Build statistics text
 	statsStr := formatStats(commentsRead, lettersTyped, commandsSent, triggeredLetters)
 	statsLines := strings.Split(strings.TrimRight(statsStr, "\n"), "\n")
 
-	// Count rows the rendered image occupies
 	imgLines := strings.Split(strings.TrimRight(result, "\n"), "\n")
-	imgRows := len(imgLines)
 
-	// Reset colors then overlay stats on the right side via CUP (cursor positioning)
-	rightCol := imgWidth + 2 // 2-character gap
+	fmt.Print("\033[2J\033[H")
 	fmt.Print("\033[0m")
 
-	for i, line := range statsLines {
-		row := i + 1
-		fmt.Printf("\033[%d;%dH%s", row, rightCol, line)
+	rightCol := imgWidth + 2
+
+	maxRows := max(len(imgLines), len(statsLines))
+	if maxRows > height {
+		maxRows = height
 	}
 
-	// If the image has more rows than stats, ensure the stats column is blank
-	// for the remaining rows
-	if imgRows > len(statsLines) {
-		for i := len(statsLines); i < imgRows; i++ {
-			fmt.Printf("\033[%d;%dH\033[0m", i+1, rightCol)
+	for i := 0; i < maxRows; i++ {
+		fmt.Print("\033[2K")
+
+		if i < len(imgLines) {
+			fmt.Print(imgLines[i])
+			fmt.Print("\033[0m")
 		}
+
+		if i < len(statsLines) {
+			fmt.Printf("\033[%dG%s", rightCol, statsLines[i])
+		}
+
+		fmt.Print("\r\n")
 	}
 
-	// Position cursor below both areas
-	bottomRow := imgRows
-	if len(statsLines) > bottomRow {
-		bottomRow = len(statsLines)
-	}
-	bottomRow += 2
-	fmt.Printf("\033[%d;1H", bottomRow)
+	fmt.Print("\r\n")
 }
 
 // formatStats builds the statistics text block.
@@ -112,6 +110,7 @@ func formatStats(commentsRead, lettersTyped, commandsSent int, triggeredLetters 
 		for _, l := range sorted {
 			b.WriteString(fmt.Sprintf("  %s\n", l))
 		}
+		b.WriteString(fmt.Sprintf("Triggered: %s\n", strings.Join(sorted, "")))
 	}
 	return b.String()
 }

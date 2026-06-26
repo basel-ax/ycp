@@ -33,6 +33,9 @@ go.work.sum
 # Test artifacts and logs
 *.log
 
+# Temp directory
+/tmp/
+
 # Editor/IDE
 # .idea/
 # .vscode/
