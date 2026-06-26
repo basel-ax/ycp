@@ -107,7 +107,7 @@ func (p *Processor) processDoubleLetters(comment string) {
 			}
 			p.cfg.TotalLimit++
 			p.stats.RecordTrigger(charStr)
-			fmt.Printf("Letter: %s\n", charStr)
+			fmt.Printf("%s\n", charStr)
 		}
 
 		p.stats.RecordLetter()

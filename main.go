@@ -4,6 +4,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"os/signal"
@@ -164,6 +165,11 @@ func main() {
 			log.Fatalf("Error initializing logger: %v", err)
 		}
 		defer logger.Close()
+	}
+
+	// Errors still go into the log file via the Logger.
+	if !*devMode {
+		log.SetOutput(io.Discard)
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
