@@ -4,11 +4,13 @@
 This is a Golang console application that reads comments from a YouTube stream, processes them based on a configuration file, and interacts with Redis to track letter counts. The application checks for double letters/symbols in comments, compares them with the FINAL_COMMENT, and updates counts in Redis. If a count exceeds REDIS_COUNT, it resets the count, increases the total limit, and prints the letter. The application displays statistics and handles various edge cases such as time limits, command limits, and specific final comments.
 
 ## Features
-- Read comments from a YouTube stream.
-- Process comments based on a configuration file.
-- Track button presses in Redis.
-- Display statistics and handle edge cases.
-- Support for both real API and mock data.
+- Read comments from a YouTube stream or use built-in mock data
+- Process comments based on a configuration file
+- Track button presses in Redis
+- **ANSI art final screen** — random image from `graphics/` displayed on the left 2/3 with statistics on the right 1/3
+- **Clean production startup** — no console messages in normal mode; all data logged to file
+- Support for both real YouTube API and mock data
+- Graceful shutdown via ESC key, SIGINT/SIGTERM, time limit, or total limit
 
 ## Prerequisites
 - Golang
@@ -62,7 +64,10 @@ To start the application in development mode (prints comments to console), run t
 ./ycp -dev
 ```
 
-In development mode, comments are printed directly to the console instead of being logged to a file. This is useful for debugging and development purposes.
+In development mode, comments are printed directly to the console instead of being logged to a file, and startup log messages are visible. This is useful for debugging and development purposes.
+
+### Production Mode
+In normal mode (`./ycp`), the console starts completely empty — no startup messages are shown. All comment data is logged to a timestamped file. The final statistics screen renders a random ANSI graphic from the `graphics/` directory alongside the statistics.
 
 ## Configuration
 The application can be configured using the `.env` file. Here are the available configuration options:
@@ -74,6 +79,15 @@ The application can be configured using the `.env` file. Here are the available 
 - **YouTube API Key**: Set your YouTube Data API v3 key for real stream integration (`YOUTUBE_API_KEY=`). Optional - required only for live stream comments.
 - **Redis Connection**: Set the Redis connection details (`REDIS_HOST`, `REDIS_PORT`, `REDIS_PASSWORD`, `REDIS_DB`).
 - **Redis Count**: Set the threshold for resetting letter counts (`REDIS_COUNT=5`).
+
+## Final Statistics Screen
+When processing completes (by reaching the total limit, time limit, or detecting the final comment), the application displays a final statistics screen:
+
+- **ANSI Graphic**: A random image from the `graphics/` directory is rendered as ANSI art on the left 2/3 of the terminal.
+- **Statistics Panel**: Comments read, letters typed, commands sent, and triggered letters (sorted alphabetically) are displayed on the right 1/3.
+- **Fallback Mode**: If no graphics directory or images exist, statistics are shown in plain text.
+
+Add JPG or PNG images to the `graphics/` directory to customize the final screen.
 
 ### YouTube Integration Modes
 
