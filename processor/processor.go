@@ -3,6 +3,7 @@ package processor
 import (
 	"fmt"
 	"log"
+	"math/rand"
 	"strings"
 
 	"github.com/basel-ax/ycp/config"
@@ -26,6 +27,19 @@ type StatsRecorder interface {
 	RecordLetter()
 	RecordCommand()
 	RecordTrigger(letter string)
+}
+
+var motivatingMessages = []string{
+	"Almost there!",
+	"keep it up!",
+	"So close!",
+	"You are doing great!",
+	"Do not stop!",
+	"Just a little more!",
+	"Nice work, keep going!",
+	"You are getting closer!",
+	"Hang in there!",
+	"Great job, do not give up!",
 }
 
 // Processor handles comment processing logic.
@@ -108,6 +122,9 @@ func (p *Processor) processDoubleLetters(comment string) {
 			p.cfg.TotalLimit++
 			p.stats.RecordTrigger(charStr)
 			fmt.Printf("%s\n", charStr)
+		} else {
+			msg := motivatingMessages[rand.Intn(len(motivatingMessages))]
+			fmt.Printf("%s (%d/%d)\n", msg, count, p.cfg.RedisCount)
 		}
 
 		p.stats.RecordLetter()
