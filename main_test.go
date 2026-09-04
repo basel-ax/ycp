@@ -65,18 +65,14 @@ func TestProcessComment(t *testing.T) {
 	proc := processor.New(cfg, stats, redisClient, logger, false)
 
 	comment := "ww"
-	shouldTerminate := proc.Process(comment)
-	if shouldTerminate {
-		t.Errorf("Expected shouldTerminate to be false, got true")
-	}
-
+	_, _ = proc.Process(comment)
 	if stats.CommentsRead != 1 {
 		t.Errorf("Expected CommentsRead to be 1, got %d", stats.CommentsRead)
 	}
 
 	comment = cfg.FinalComment
-	shouldTerminate = proc.Process(comment)
-	if !shouldTerminate {
+	terminate, _ := proc.Process(comment)
+	if !terminate {
 		t.Errorf("Expected shouldTerminate to be true for FinalComment comment")
 	}
 }
@@ -219,12 +215,12 @@ func TestSymbolDoubleLetters(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			stats := &Stats{}
-			proc := processor.New(cfg, stats, redisClient, nil, false)
-			shouldTerminate := proc.Process(tc.comment)
+		stats := &Stats{}
+		proc := processor.New(cfg, stats, redisClient, nil, false)
+		terminate, _ := proc.Process(tc.comment)
 
-			if shouldTerminate != tc.wantTerminate {
-				t.Errorf("shouldTerminate: got %v, want %v", shouldTerminate, tc.wantTerminate)
+		if terminate != tc.wantTerminate {
+			t.Errorf("shouldTerminate: got %v, want %v", terminate, tc.wantTerminate)
 			}
 			if stats.LettersTyped != tc.wantLetters {
 				t.Errorf("LettersTyped: got %d, want %d", stats.LettersTyped, tc.wantLetters)

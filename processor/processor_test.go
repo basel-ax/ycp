@@ -42,7 +42,7 @@ func TestMotivatingMessageShownWhenCountNotReached(t *testing.T) {
 	stats := &mockStats{}
 	p := New(cfg, stats, redisClient, nil, false)
 
-	_ = p.Process("??")
+	_, _ = p.Process("??")
 
 	if stats.lettersTyped != 1 {
 		t.Errorf("expected LettersTyped to be 1, got %d", stats.lettersTyped)

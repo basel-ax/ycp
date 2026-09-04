@@ -33,6 +33,26 @@ func (s *Stats) RecordLetter()          { s.LettersTyped++ }
 func (s *Stats) RecordCommand()         { s.CommandsSent++ }
 func (s *Stats) RecordTrigger(l string) { s.TriggeredLetters = append(s.TriggeredLetters, l) }
 
+// commentSource unifies mock and YouTube comment streams.
+type commentSource interface {
+	Read(ctx context.Context) <-chan string
+}
+
+type mockSource struct{}
+
+func (m *mockSource) Read(ctx context.Context) <-chan string {
+	return mock.NewSource().Read(ctx)
+}
+
+type youtubeSource struct {
+	videoID string
+	apiKey  string
+}
+
+func (y *youtubeSource) Read(ctx context.Context) <-chan string {
+	return youtube.FetchComments(ctx, y.videoID, y.apiKey)
+}
+
 type Logger struct {
 	file *os.File
 }
@@ -60,6 +80,7 @@ func (l *Logger) Close() error {
 }
 
 func readComments(ctx context.Context, cfg *config.Config) <-chan string {
+	var src commentSource
 	if cfg.StreamURL != "" && cfg.YouTubeAPIKey != "" {
 		videoID, err := youtube.ExtractVideoID(cfg.StreamURL)
 		if err != nil {
@@ -67,34 +88,34 @@ func readComments(ctx context.Context, cfg *config.Config) <-chan string {
 			log.Println("Falling back to mock comments")
 		} else {
 			ytCtx, ytCancel := context.WithCancel(ctx)
+			defer ytCancel()
 
-			ytComments := youtube.FetchComments(ytCtx, videoID, cfg.YouTubeAPIKey)
+			src = &youtubeSource{videoID: videoID, apiKey: cfg.YouTubeAPIKey}
+			ytComments := src.Read(ytCtx)
 
-				select {
-				case msg, ok := <-ytComments:
-					if ok {
-						log.Printf("YouTube API connected with message: %s", msg)
-						// Forward first message + remaining on a merged channel
-						ch := make(chan string, 1)
-						go func() {
-							defer close(ch)
-							defer ytCancel()
-							ch <- msg
-							for m := range ytComments {
-								ch <- m
-							}
-						}()
-						return ch
-					}
-				case <-time.After(3 * time.Second):
-					log.Println("YouTube API timeout, falling back to mock comments")
+			select {
+			case msg, ok := <-ytComments:
+				if ok {
+					log.Printf("YouTube API connected with message: %s", msg)
+					// Forward first message + remaining on a merged channel
+					ch := make(chan string, 1)
+					go func() {
+						defer close(ch)
+						defer ytCancel()
+						ch <- msg
+						for m := range ytComments {
+							ch <- m
+						}
+					}()
+					return ch
 				}
-
-			ytCancel()
+			case <-time.After(3 * time.Second):
+				log.Println("YouTube API timeout, falling back to mock comments")
+			}
 		}
 	}
 
-	return mock.NewSource().Read(ctx)
+	return (&mockSource{}).Read(ctx)
 }
 
 // listenForESC watches for ESC key press and cancels context to stop processing.
@@ -160,7 +181,7 @@ func main() {
 	}
 	defer redisClient.Close()
 
-	var logger processor.CommentLogger
+	var logger processor.Logger
 	if *devMode {
 		logger = nil
 	} else {
@@ -202,8 +223,13 @@ func main() {
 	go func() {
 		defer cancel()
 		for comment := range comments {
-			if proc.Process(comment) {
+			terminate, triggeredLetter := proc.Process(comment)
+			if terminate {
 				return
+			}
+			// Increment TotalLimit when a threshold was triggered (processor no longer mutates config)
+			if triggeredLetter != "" {
+				cfg.TotalLimit++
 			}
 			if stats.CommandsSent >= cfg.TotalLimit {
 				return

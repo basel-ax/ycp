@@ -9,24 +9,24 @@ import (
 	"github.com/basel-ax/ycp/config"
 )
 
-// LetterCounter abstracts Redis increment/reset operations.
-type LetterCounter interface {
-	IncrementButtonCount(buttonCode string) (int, error)
-	ResetButtonCount(buttonCode string) error
-}
-
-// CommentLogger abstracts comment and event logging.
-type CommentLogger interface {
-	LogComment(comment string) error
-	LogEvent(event string) error
-}
-
 // StatsRecorder abstracts processing statistics tracking.
 type StatsRecorder interface {
 	RecordComment()
 	RecordLetter()
 	RecordCommand()
 	RecordTrigger(letter string)
+}
+
+// Logger abstracts comment and event logging.
+type Logger interface {
+	LogComment(comment string) error
+	LogEvent(event string) error
+}
+
+// Counter abstracts Redis increment/reset operations.
+type Counter interface {
+	IncrementButtonCount(buttonCode string) (int, error)
+	ResetButtonCount(buttonCode string) error
 }
 
 var motivatingMessages = []string{
@@ -46,13 +46,13 @@ var motivatingMessages = []string{
 type Processor struct {
 	cfg     *config.Config
 	stats   StatsRecorder
-	counter LetterCounter
-	logger  CommentLogger
+	counter Counter
+	logger  Logger
 	devMode bool
 }
 
 // New creates a new Processor with the given dependencies.
-func New(cfg *config.Config, stats StatsRecorder, counter LetterCounter, logger CommentLogger, devMode bool) *Processor {
+func New(cfg *config.Config, stats StatsRecorder, counter Counter, logger Logger, devMode bool) *Processor {
 	return &Processor{
 		cfg:     cfg,
 		stats:   stats,
@@ -62,18 +62,21 @@ func New(cfg *config.Config, stats StatsRecorder, counter LetterCounter, logger 
 	}
 }
 
-// Process processes a single comment and returns true if processing should terminate.
-func (p *Processor) Process(comment string) bool {
+// Process processes a single comment and returns:
+// - terminate: true if processing should stop (final comment detected)
+// - triggeredLetter: the letter that reached the threshold (if any), so main
+//   can increment TotalLimit without the processor mutating config.
+func (p *Processor) Process(comment string) (terminate bool, triggeredLetter string) {
 	p.logOrPrint(comment)
 
 	if p.checkFinal(comment) {
-		return true
+		return true, ""
 	}
 
-	p.processDoubleLetters(comment)
+	triggeredLetter = p.processDoubleLetters(comment)
 
 	p.stats.RecordComment()
-	return false
+	return false, triggeredLetter
 }
 
 func (p *Processor) logOrPrint(comment string) {
@@ -98,7 +101,7 @@ func (p *Processor) checkFinal(comment string) bool {
 	return false
 }
 
-func (p *Processor) processDoubleLetters(comment string) {
+func (p *Processor) processDoubleLetters(comment string) string {
 	for i := 0; i < len(comment)-1; i++ {
 		if comment[i] != comment[i+1] {
 			continue
@@ -119,9 +122,9 @@ func (p *Processor) processDoubleLetters(comment string) {
 			if err := p.counter.ResetButtonCount(charStr); err != nil {
 				log.Printf("Error resetting count for %s: %v", charStr, err)
 			}
-			p.cfg.TotalLimit++
 			p.stats.RecordTrigger(charStr)
 			fmt.Printf("%s\n", charStr)
+			return charStr
 		} else {
 			msg := motivatingMessages[rand.Intn(len(motivatingMessages))]
 			fmt.Printf("%s (%d/%d)\n", msg, count, p.cfg.RedisCount)
@@ -130,4 +133,5 @@ func (p *Processor) processDoubleLetters(comment string) {
 		p.stats.RecordLetter()
 		p.stats.RecordCommand()
 	}
+	return ""
 }
